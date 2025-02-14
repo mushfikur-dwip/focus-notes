@@ -1,64 +1,49 @@
-
-import { useState, useEffect } from "react";
-import { Bold, Italic, Underline, Save, Download, Moon, Sun, LogIn } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import {
+  Bold,
+  Italic,
+  Underline,
+  Save,
+  Download,
+  Moon,
+  Sun,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { auth, provider, db } from "@/lib/firebase";
-import { signInWithPopup, signOut, User } from "firebase/auth";
-import { doc, setDoc, getDoc } from "firebase/firestore";
 
 const Editor = () => {
-  const [content, setContent] = useState(() => localStorage.getItem("content") || "");
+  const [content, setContent] = useState(
+    () => localStorage.getItem("content") || ""
+  );
   const [isDark, setIsDark] = useState(false);
   const [isToolbarVisible, setIsToolbarVisible] = useState(true);
-  const [user, setUser] = useState<User | null>(null);
+  const editorRef = useRef(null);
 
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((user) => {
-      setUser(user);
-      if (user) {
-        loadContent(user.uid);
-      }
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    if (user) {
-      saveContent();
-    } else {
-      localStorage.setItem("content", content);
-    }
+    localStorage.setItem("content", content);
   }, [content]);
 
-  const loadContent = async (userId: string) => {
-    const docRef = doc(db, "notes", userId);
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-      setContent(docSnap.data().content);
+  useEffect(() => {
+    const savedContent = localStorage.getItem("content");
+    if (savedContent && editorRef.current) {
+      editorRef.current.innerHTML = savedContent;
+    }
+  }, []);
+
+  const handleInput = () => {
+    if (editorRef.current) {
+      setContent(editorRef.current.innerHTML);
     }
   };
 
-  const saveContent = async () => {
-    if (!user) return;
-    await setDoc(doc(db, "notes", user.uid), {
-      content,
-      updatedAt: new Date(),
-    });
-  };
-
-  const handleFormat = (command: string) => {
+  const applyFormatting = (command) => {
     document.execCommand(command, false);
+    handleInput();
   };
 
-  const handleSave = async () => {
-    if (user) {
-      await saveContent();
-    } else {
-      localStorage.setItem("content", content);
-    }
+  const handleSave = () => {
+    localStorage.setItem("content", content);
     toast("Content saved successfully");
   };
 
@@ -78,36 +63,21 @@ const Editor = () => {
     document.documentElement.classList.toggle("dark");
   };
 
-  const handleSignIn = async () => {
-    try {
-      await signInWithPopup(auth, provider);
-      toast("Signed in successfully");
-    } catch (error) {
-      toast("Error signing in");
-    }
-  };
-
-  const handleSignOut = async () => {
-    try {
-      await signOut(auth);
-      setContent("");
-      toast("Signed out successfully");
-    } catch (error) {
-      toast("Error signing out");
-    }
-  };
-
   return (
-    <div className={cn(
-      "min-h-screen transition-colors duration-300",
-      isDark ? "bg-slate-900" : "bg-white"
-    )}>
+    <div
+      className={cn(
+        "min-h-screen transition-colors duration-300",
+        isDark ? "bg-slate-900" : "bg-white"
+      )}
+    >
       <div className="max-w-4xl mx-auto px-4 py-8">
         <div
           className={cn(
             "fixed top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 p-2 rounded-lg backdrop-blur-lg transition-all duration-300",
             isDark ? "bg-slate-800/50" : "bg-white/50",
-            isToolbarVisible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-4"
+            isToolbarVisible
+              ? "opacity-100 translate-y-0"
+              : "opacity-0 -translate-y-4"
           )}
           onMouseEnter={() => setIsToolbarVisible(true)}
           onMouseLeave={() => setIsToolbarVisible(false)}
@@ -115,114 +85,54 @@ const Editor = () => {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => handleFormat("bold")}
-            className={cn(
-              "hover:bg-slate-100 dark:hover:bg-slate-700",
-              isDark ? "text-white" : "text-slate-700"
-            )}
+            onClick={() => applyFormatting("bold")}
           >
             <Bold className="h-4 w-4" />
           </Button>
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => handleFormat("italic")}
-            className={cn(
-              "hover:bg-slate-100 dark:hover:bg-slate-700",
-              isDark ? "text-white" : "text-slate-700"
-            )}
+            onClick={() => applyFormatting("italic")}
           >
             <Italic className="h-4 w-4" />
           </Button>
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => handleFormat("underline")}
-            className={cn(
-              "hover:bg-slate-100 dark:hover:bg-slate-700",
-              isDark ? "text-white" : "text-slate-700"
-            )}
+            onClick={() => applyFormatting("underline")}
           >
             <Underline className="h-4 w-4" />
           </Button>
           <div className="w-px h-6 bg-slate-200 dark:bg-slate-700" />
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleSave}
-            className={cn(
-              "hover:bg-slate-100 dark:hover:bg-slate-700",
-              isDark ? "text-white" : "text-slate-700"
-            )}
-          >
+          <Button variant="ghost" size="icon" onClick={handleSave}>
             <Save className="h-4 w-4" />
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleDownload}
-            className={cn(
-              "hover:bg-slate-100 dark:hover:bg-slate-700",
-              isDark ? "text-white" : "text-slate-700"
-            )}
-          >
+          <Button variant="ghost" size="icon" onClick={handleDownload}>
             <Download className="h-4 w-4" />
           </Button>
           <div className="w-px h-6 bg-slate-200 dark:bg-slate-700" />
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={toggleTheme}
-            className={cn(
-              "hover:bg-slate-100 dark:hover:bg-slate-700",
-              isDark ? "text-white" : "text-slate-700"
+          <Button variant="ghost" size="icon" onClick={toggleTheme}>
+            {isDark ? (
+              <Sun className="h-4 w-4" />
+            ) : (
+              <Moon className="h-4 w-4" />
             )}
-          >
-            {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </Button>
-          <div className="w-px h-6 bg-slate-200 dark:bg-slate-700" />
-          {user ? (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleSignOut}
-              className={cn(
-                "hover:bg-slate-100 dark:hover:bg-slate-700",
-                isDark ? "text-white" : "text-slate-700"
-              )}
-            >
-              <img src={user.photoURL || ""} alt="Profile" className="w-4 h-4 rounded-full" />
-            </Button>
-          ) : (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleSignIn}
-              className={cn(
-                "hover:bg-slate-100 dark:hover:bg-slate-700",
-                isDark ? "text-white" : "text-slate-700"
-              )}
-            >
-              <LogIn className="h-4 w-4" />
-            </Button>
-          )}
         </div>
 
         <div
+          id="editor"
+          ref={editorRef}
           contentEditable
           className={cn(
-            "outline-none mt-16 prose prose-lg max-w-none transition-colors duration-300 font-merriweather caret-current",
+            "outline-none mt-16 prose prose-lg max-w-none transition-colors duration-300 font-merriweather",
             isDark ? "prose-invert" : "prose-slate",
-            "focus:ring-0",
-            "animate-blink"
+            "focus:ring-0"
           )}
           dir="ltr"
           spellCheck="true"
-          onInput={(e) => setContent(e.currentTarget.textContent || "")}
-          suppressContentEditableWarning
-        >
-          {content}
-        </div>
+          onInput={handleInput}
+        />
       </div>
     </div>
   );

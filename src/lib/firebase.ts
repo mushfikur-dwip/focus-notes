@@ -4,13 +4,13 @@ import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  // IMPORTANT: You need to provide your own Firebase configuration
-  apiKey: "your-api-key",
-  authDomain: "your-auth-domain",
-  projectId: "your-project-id",
-  storageBucket: "your-storage-bucket",
-  messagingSenderId: "your-messaging-sender-id",
-  appId: "your-app-id"
+  apiKey: "AIzaSyBw0PucNe-p9nsot2ZTGg4cyrD0TgDC_Ik",
+  authDomain: "focus-note-40b4e.firebaseapp.com",
+  projectId: "focus-note-40b4e",
+  storageBucket: "focus-note-40b4e.firebasestorage.app",
+  messagingSenderId: "992811559836",
+  appId: "1:992811559836:web:9b143358e56b796c04b659",
+  measurementId: "G-HH2MFW6V04"
 };
 
 const app = initializeApp(firebaseConfig);

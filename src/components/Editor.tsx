@@ -39,11 +39,6 @@ const Editor = () => {
     document.documentElement.classList.toggle("dark");
   };
 
-  const handleInput = (e: React.FormEvent<HTMLDivElement>) => {
-    const newContent = e.currentTarget.innerHTML;
-    setContent(newContent);
-  };
-
   return (
     <div className={cn(
       "min-h-screen transition-colors duration-300",
@@ -136,10 +131,11 @@ const Editor = () => {
             isDark ? "prose-invert" : "prose-slate",
             "focus:ring-0"
           )}
-          onInput={handleInput}
-          dangerouslySetInnerHTML={{ __html: content }}
-          suppressContentEditableWarning
-        />
+          dir="ltr"
+          spellCheck="true"
+        >
+          {content}
+        </div>
       </div>
     </div>
   );

@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Bold, Italic, Underline, Save, Download, Moon, Sun, LogIn, PlusSquare, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -42,10 +41,23 @@ const Editor = () => {
 
   const loadNotes = async (user: User) => {
     try {
-      // Here we'll implement Google Drive API calls to list files
-      // This is a placeholder for now
-      toast("Loading notes from Google Drive...");
+      const accessToken = await user.getIdToken();
+      const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=mimeType='text/plain'`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      });
+      const data = await response.json();
+      const loadedNotes = data.files.map((file: any) => ({
+        id: file.id,
+        name: file.name,
+        content: "",
+        lastModified: new Date(file.modifiedTime)
+      }));
+      setNotes(loadedNotes);
+      toast("Notes loaded from Google Drive");
     } catch (error) {
+      console.error("Error loading notes:", error);
       toast("Error loading notes");
     }
   };
@@ -69,16 +81,49 @@ const Editor = () => {
   };
 
   const handleSave = async () => {
-    if (!user) {
-      toast("Please sign in to save");
+    if (!user || !currentNote) {
+      toast("Please sign in and create a note first");
       return;
     }
+
     try {
-      // Here we'll implement Google Drive API save functionality
-      toast("Saving to Google Drive...");
+      const accessToken = await user.getIdToken();
+      const metadata = {
+        name: currentNote.name,
+        mimeType: 'text/plain',
+      };
+
+      let fileId = currentNote.id;
+      let method = 'POST';
+      let url = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+
+      if (fileId && fileId.length > 10) { // Check if it's a valid Google Drive file ID
+        method = 'PATCH';
+        url = `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`;
+      }
+
+      const form = new FormData();
+      form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+      form.append('file', new Blob([content], { type: 'text/plain' }));
+
+      await fetch(url, {
+        method,
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: form,
+      });
+
+      toast("Saved to Google Drive");
+      loadNotes(user); // Refresh the notes list
     } catch (error) {
+      console.error("Error saving:", error);
       toast("Error saving to Google Drive");
     }
+  };
+
+  const handleFormat = (command: string) => {
+    document.execCommand(command, false);
   };
 
   const handleDownload = () => {

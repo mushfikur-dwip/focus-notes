@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Bold, Italic, Underline, Save, Download, Moon, Sun, LogIn } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -88,10 +87,12 @@ const Editor = () => {
 
   const handleSignIn = async () => {
     try {
-      await signInWithPopup(auth, provider);
+      const result = await signInWithPopup(auth, provider);
+      console.log("Sign in successful", result.user);
       toast("Signed in successfully");
-    } catch (error) {
-      toast("Error signing in");
+    } catch (error: any) {
+      console.error("Sign in error:", error);
+      toast(error.message || "Error signing in");
     }
   };
 

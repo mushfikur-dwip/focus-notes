@@ -15,7 +15,11 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const provider = new GoogleAuthProvider();
+
+// Add these scopes for Google Drive access
 provider.addScope('https://www.googleapis.com/auth/drive.file');
+provider.addScope('https://www.googleapis.com/auth/drive.appdata');
 provider.setCustomParameters({
-  prompt: 'consent'
+  prompt: 'consent',
+  access_type: 'offline'
 });

@@ -1,71 +1,83 @@
+
 import { useState, useEffect } from "react";
-import { Bold, Italic, Underline, Save, Download, Moon, Sun, LogIn } from "lucide-react";
+import { Bold, Italic, Underline, Save, Download, Moon, Sun, LogIn, PlusSquare, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { auth, provider, db } from "@/lib/firebase";
+import { auth, provider } from "@/lib/firebase";
 import { signInWithPopup, signOut, User } from "firebase/auth";
-import { doc, setDoc, getDoc } from "firebase/firestore";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+
+interface Note {
+  id: string;
+  name: string;
+  content: string;
+  lastModified: Date;
+}
 
 const Editor = () => {
   const [content, setContent] = useState("");
   const [isDark, setIsDark] = useState(false);
   const [isToolbarVisible, setIsToolbarVisible] = useState(true);
   const [user, setUser] = useState<User | null>(null);
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [currentNote, setCurrentNote] = useState<Note | null>(null);
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((user) => {
       setUser(user);
       if (user) {
-        loadContent(user.uid);
+        loadNotes(user);
       }
     });
 
     return () => unsubscribe();
   }, []);
 
-  const loadContent = async (userId: string) => {
+  const loadNotes = async (user: User) => {
     try {
-      const docRef = doc(db, "notes", userId);
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        setContent(docSnap.data().content);
-      }
+      // Here we'll implement Google Drive API calls to list files
+      // This is a placeholder for now
+      toast("Loading notes from Google Drive...");
     } catch (error) {
-      toast("Error loading content");
+      toast("Error loading notes");
     }
   };
 
   const handleContentChange = (e: React.FormEvent<HTMLDivElement>) => {
     const newContent = e.currentTarget.textContent || "";
     setContent(newContent);
-    if (user) {
-      saveContent(newContent);
-    }
   };
 
-  const saveContent = async (contentToSave: string) => {
-    if (!user) return;
-    try {
-      await setDoc(doc(db, "notes", user.uid), {
-        content: contentToSave,
-        updatedAt: new Date(),
-      });
-    } catch (error) {
-      toast("Error saving content");
-    }
-  };
-
-  const handleFormat = (command: string) => {
-    document.execCommand(command, false);
+  const createNewNote = () => {
+    const newNote: Note = {
+      id: Date.now().toString(),
+      name: `Note ${notes.length + 1}`,
+      content: "",
+      lastModified: new Date()
+    };
+    setNotes([newNote, ...notes]);
+    setCurrentNote(newNote);
+    setContent("");
+    toast("New note created");
   };
 
   const handleSave = async () => {
-    if (user) {
-      await saveContent(content);
-      toast("Content saved to cloud");
-    } else {
+    if (!user) {
       toast("Please sign in to save");
+      return;
+    }
+    try {
+      // Here we'll implement Google Drive API save functionality
+      toast("Saving to Google Drive...");
+    } catch (error) {
+      toast("Error saving to Google Drive");
     }
   };
 
@@ -73,7 +85,7 @@ const Editor = () => {
     const element = document.createElement("a");
     const file = new Blob([content], { type: "text/plain" });
     element.href = URL.createObjectURL(file);
-    element.download = "focus-notes.txt";
+    element.download = `${currentNote?.name || "untitled"}.txt`;
     document.body.appendChild(element);
     element.click();
     document.body.removeChild(element);
@@ -100,6 +112,8 @@ const Editor = () => {
     try {
       await signOut(auth);
       setContent("");
+      setNotes([]);
+      setCurrentNote(null);
       toast("Signed out successfully");
     } catch (error) {
       toast("Error signing out");
@@ -121,6 +135,55 @@ const Editor = () => {
           onMouseEnter={() => setIsToolbarVisible(true)}
           onMouseLeave={() => setIsToolbarVisible(false)}
         >
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={createNewNote}
+            className={cn(
+              "hover:bg-slate-100 dark:hover:bg-slate-700",
+              isDark ? "text-white" : "text-slate-700"
+            )}
+          >
+            <PlusSquare className="h-4 w-4" />
+          </Button>
+          {user && (
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={cn(
+                    "hover:bg-slate-100 dark:hover:bg-slate-700",
+                    isDark ? "text-white" : "text-slate-700"
+                  )}
+                >
+                  <FileText className="h-4 w-4" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left">
+                <SheetHeader>
+                  <SheetTitle>Your Notes</SheetTitle>
+                </SheetHeader>
+                <div className="mt-4">
+                  {notes.map((note) => (
+                    <div
+                      key={note.id}
+                      className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer rounded"
+                      onClick={() => {
+                        setCurrentNote(note);
+                        setContent(note.content);
+                      }}
+                    >
+                      <h3 className="font-medium">{note.name}</h3>
+                      <p className="text-sm text-gray-500">
+                        {new Date(note.lastModified).toLocaleDateString()}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </SheetContent>
+            </Sheet>
+          )}
           <Button
             variant="ghost"
             size="icon"

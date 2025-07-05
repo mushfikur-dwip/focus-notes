@@ -5,6 +5,9 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { auth, provider } from "@/lib/firebase";
 import { signInWithPopup, signOut, User } from "firebase/auth";
+import { initializeApp } from "firebase/app";
+import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, query, where, getDocs, orderBy } from "firebase/firestore";
+import { NoteEncryption } from "@/lib/encryption";
 import {
   Sheet,
   SheetContent,
@@ -13,11 +16,26 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 
+// Initialize Firestore
+const firebaseConfig = {
+  apiKey: "AIzaSyBw0PucNe-p9nsot2ZTGg4cyrD0TgDC_Ik",
+  authDomain: "focus-note-40b4e.firebaseapp.com",
+  projectId: "focus-note-40b4e",
+  storageBucket: "focus-note-40b4e.appspot.com",
+  messagingSenderId: "992811559836",
+  appId: "1:992811559836:web:9b143358e56b796c04b659",
+  measurementId: "G-HH2MFW6V04"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
 interface Note {
   id: string;
   name: string;
   content: string;
   lastModified: Date;
+  encryptedContent?: string;
 }
 
 const Editor = () => {
@@ -41,21 +59,37 @@ const Editor = () => {
 
   const loadNotes = async (user: User) => {
     try {
-      const accessToken = await user.getIdToken();
-      const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=mimeType='text/plain'`, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
-      });
-      const data = await response.json();
-      const loadedNotes = data.files.map((file: any) => ({
-        id: file.id,
-        name: file.name,
-        content: "",
-        lastModified: new Date(file.modifiedTime)
-      }));
+      const notesRef = collection(db, 'notes');
+      const q = query(
+        notesRef,
+        where('userId', '==', user.uid),
+        orderBy('lastModified', 'desc')
+      );
+      const querySnapshot = await getDocs(q);
+      
+      const loadedNotes = await Promise.all(
+        querySnapshot.docs.map(async (docSnapshot) => {
+          const data = docSnapshot.data();
+          let decryptedContent = '';
+          
+          try {
+            decryptedContent = await NoteEncryption.decrypt(data.encryptedContent);
+          } catch (error) {
+            console.error('Error decrypting note:', error);
+            decryptedContent = 'Error: Could not decrypt note';
+          }
+          
+          return {
+            id: docSnapshot.id,
+            name: data.name,
+            content: decryptedContent,
+            lastModified: data.lastModified.toDate(),
+          };
+        })
+      );
+      
       setNotes(loadedNotes);
-      toast("Notes loaded from Google Drive");
+      toast("Notes loaded successfully");
     } catch (error) {
       console.error("Error loading notes:", error);
       toast("Error loading notes");
@@ -87,38 +121,29 @@ const Editor = () => {
     }
 
     try {
-      const accessToken = await user.getIdToken();
-      const metadata = {
+      const encryptedContent = await NoteEncryption.encrypt(content);
+      const noteData = {
         name: currentNote.name,
-        mimeType: 'text/plain',
+        encryptedContent,
+        lastModified: new Date(),
+        userId: user.uid,
       };
 
-      let fileId = currentNote.id;
-      let method = 'POST';
-      let url = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
-
-      if (fileId && fileId.length > 10) { // Check if it's a valid Google Drive file ID
-        method = 'PATCH';
-        url = `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`;
+      if (currentNote.id.length > 10) {
+        // Update existing note
+        const noteRef = doc(db, 'notes', currentNote.id);
+        await updateDoc(noteRef, noteData);
+      } else {
+        // Create new note
+        const docRef = await addDoc(collection(db, 'notes'), noteData);
+        setCurrentNote({ ...currentNote, id: docRef.id });
       }
 
-      const form = new FormData();
-      form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-      form.append('file', new Blob([content], { type: 'text/plain' }));
-
-      await fetch(url, {
-        method,
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-        },
-        body: form,
-      });
-
-      toast("Saved to Google Drive");
-      loadNotes(user); // Refresh the notes list
+      toast("Note saved securely");
+      loadNotes(user);
     } catch (error) {
-      console.error("Error saving:", error);
-      toast("Error saving to Google Drive");
+      console.error("Error saving note:", error);
+      toast("Error saving note");
     }
   };
 
@@ -165,6 +190,11 @@ const Editor = () => {
     }
   };
 
+  const selectNote = async (note: Note) => {
+    setCurrentNote(note);
+    setContent(note.content);
+  };
+
   return (
     <div className={cn(
       "min-h-screen transition-colors duration-300",
@@ -207,17 +237,14 @@ const Editor = () => {
               </SheetTrigger>
               <SheetContent side="left">
                 <SheetHeader>
-                  <SheetTitle>Your Notes</SheetTitle>
+                  <SheetTitle>Your Encrypted Notes</SheetTitle>
                 </SheetHeader>
                 <div className="mt-4">
                   {notes.map((note) => (
                     <div
                       key={note.id}
                       className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer rounded"
-                      onClick={() => {
-                        setCurrentNote(note);
-                        setContent(note.content);
-                      }}
+                      onClick={() => selectNote(note)}
                     >
                       <h3 className="font-medium">{note.name}</h3>
                       <p className="text-sm text-gray-500">

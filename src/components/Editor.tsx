@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from "react";
 import { Bold, Italic, Underline, Save, Download, Moon, Sun, LogIn, PlusSquare, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -39,6 +38,17 @@ interface Note {
   encryptedContent?: string;
 }
 
+interface LocalStorageNote {
+  id: string;
+  name: string;
+  content: string;
+  lastModified: string;
+  expiresAt: string;
+}
+
+const STORAGE_KEY = 'focusnote_local_notes';
+const STORAGE_EXPIRY_DAYS = 7;
+
 const Editor = () => {
   const [content, setContent] = useState("");
   const [isDark, setIsDark] = useState(false);
@@ -48,16 +58,91 @@ const Editor = () => {
   const [currentNote, setCurrentNote] = useState<Note | null>(null);
   const editorRef = useRef<HTMLDivElement>(null);
 
+  // Local Storage Functions
+  const saveToLocalStorage = (notes: Note[]) => {
+    const expiryDate = new Date();
+    expiryDate.setDate(expiryDate.getDate() + STORAGE_EXPIRY_DAYS);
+    
+    const localNotes: LocalStorageNote[] = notes.map(note => ({
+      ...note,
+      lastModified: note.lastModified.toISOString(),
+      expiresAt: expiryDate.toISOString()
+    }));
+    
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(localNotes));
+  };
+
+  const loadFromLocalStorage = (): Note[] => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (!stored) return [];
+      
+      const localNotes: LocalStorageNote[] = JSON.parse(stored);
+      const now = new Date();
+      
+      // Filter out expired notes
+      const validNotes = localNotes.filter(note => new Date(note.expiresAt) > now);
+      
+      // Clean up expired notes
+      if (validNotes.length !== localNotes.length) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(validNotes));
+      }
+      
+      return validNotes.map(note => ({
+        ...note,
+        lastModified: new Date(note.lastModified)
+      }));
+    } catch (error) {
+      console.error("Error loading from localStorage:", error);
+      return [];
+    }
+  };
+
+  const clearExpiredLocalStorage = () => {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (!stored) return;
+    
+    try {
+      const localNotes: LocalStorageNote[] = JSON.parse(stored);
+      const now = new Date();
+      const validNotes = localNotes.filter(note => new Date(note.expiresAt) > now);
+      
+      if (validNotes.length !== localNotes.length) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(validNotes));
+        console.log(`Cleared ${localNotes.length - validNotes.length} expired notes from localStorage`);
+      }
+    } catch (error) {
+      console.error("Error clearing expired localStorage:", error);
+    }
+  };
+
   useEffect(() => {
+    // Clear expired data on app load
+    clearExpiredLocalStorage();
+    
     const unsubscribe = auth.onAuthStateChanged((user) => {
       setUser(user);
       if (user) {
         loadNotes(user);
+      } else {
+        // Load from localStorage when not authenticated
+        const localNotes = loadFromLocalStorage();
+        setNotes(localNotes);
+        if (localNotes.length > 0) {
+          toast("Local notes loaded");
+        }
       }
     });
 
     return () => unsubscribe();
   }, []);
+
+  // Auto-save to localStorage when notes change
+  useEffect(() => {
+    if (notes.length > 0) {
+      saveToLocalStorage(notes);
+    }
+  }, [notes]);
 
   const loadNotes = async (user: User) => {
     try {
@@ -101,6 +186,21 @@ const Editor = () => {
   const handleContentChange = (e: React.FormEvent<HTMLDivElement>) => {
     const newContent = e.currentTarget.innerHTML || "";
     setContent(newContent);
+    
+    // Auto-save current note to localStorage
+    if (currentNote) {
+      const updatedNote = {
+        ...currentNote,
+        content: newContent,
+        lastModified: new Date()
+      };
+      setCurrentNote(updatedNote);
+      
+      const updatedNotes = notes.map(note => 
+        note.id === currentNote.id ? updatedNote : note
+      );
+      setNotes(updatedNotes);
+    }
   };
 
   const createNewNote = () => {
@@ -110,7 +210,8 @@ const Editor = () => {
       content: "",
       lastModified: new Date()
     };
-    setNotes([newNote, ...notes]);
+    const updatedNotes = [newNote, ...notes];
+    setNotes(updatedNotes);
     setCurrentNote(newNote);
     setContent("");
     toast("New note created");
@@ -196,6 +297,9 @@ const Editor = () => {
       setContent("");
       setNotes([]);
       setCurrentNote(null);
+      // Load local notes after sign out
+      const localNotes = loadFromLocalStorage();
+      setNotes(localNotes);
       toast("Signed out successfully");
     } catch (error) {
       toast("Error signing out");
@@ -237,41 +341,44 @@ const Editor = () => {
           >
             <PlusSquare className="h-4 w-4" />
           </Button>
-          {user && (
-            <Sheet>
-              <SheetTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className={cn(
-                    "hover:bg-slate-100 dark:hover:bg-slate-700",
-                    isDark ? "text-white" : "text-slate-700"
-                  )}
-                >
-                  <FileText className="h-4 w-4" />
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="left">
-                <SheetHeader>
-                  <SheetTitle>Your Encrypted Notes</SheetTitle>
-                </SheetHeader>
-                <div className="mt-4">
-                  {notes.map((note) => (
-                    <div
-                      key={note.id}
-                      className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer rounded"
-                      onClick={() => selectNote(note)}
-                    >
-                      <h3 className="font-medium">{note.name}</h3>
-                      <p className="text-sm text-gray-500">
-                        {new Date(note.lastModified).toLocaleDateString()}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </SheetContent>
-            </Sheet>
-          )}
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "hover:bg-slate-100 dark:hover:bg-slate-700",
+                  isDark ? "text-white" : "text-slate-700"
+                )}
+              >
+                <FileText className="h-4 w-4" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left">
+              <SheetHeader>
+                <SheetTitle>{user ? "Your Encrypted Notes" : "Your Local Notes"}</SheetTitle>
+              </SheetHeader>
+              <div className="mt-4">
+                {notes.map((note) => (
+                  <div
+                    key={note.id}
+                    className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer rounded"
+                    onClick={() => selectNote(note)}
+                  >
+                    <h3 className="font-medium">{note.name}</h3>
+                    <p className="text-sm text-gray-500">
+                      {new Date(note.lastModified).toLocaleDateString()}
+                    </p>
+                  </div>
+                ))}
+                {!user && notes.length > 0 && (
+                  <p className="text-xs text-gray-400 mt-4">
+                    Notes stored locally for 7 days
+                  </p>
+                )}
+              </div>
+            </SheetContent>
+          </Sheet>
           <Button
             variant="ghost"
             size="icon"

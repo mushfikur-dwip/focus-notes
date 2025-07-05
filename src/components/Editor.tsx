@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Bold, Italic, Underline, Save, Download, Moon, Sun, LogIn, PlusSquare, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -45,6 +45,7 @@ const Editor = () => {
   const [user, setUser] = useState<User | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
   const [currentNote, setCurrentNote] = useState<Note | null>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((user) => {
@@ -97,7 +98,7 @@ const Editor = () => {
   };
 
   const handleContentChange = (e: React.FormEvent<HTMLDivElement>) => {
-    const newContent = e.currentTarget.textContent || "";
+    const newContent = e.currentTarget.innerHTML || "";
     setContent(newContent);
   };
 
@@ -121,7 +122,9 @@ const Editor = () => {
     }
 
     try {
-      const encryptedContent = await NoteEncryption.encrypt(content);
+      // Get the HTML content from the editor
+      const htmlContent = editorRef.current?.innerHTML || content;
+      const encryptedContent = await NoteEncryption.encrypt(htmlContent);
       const noteData = {
         name: currentNote.name,
         encryptedContent,
@@ -149,11 +152,19 @@ const Editor = () => {
 
   const handleFormat = (command: string) => {
     document.execCommand(command, false);
+    if (editorRef.current) {
+      editorRef.current.focus();
+    }
   };
 
   const handleDownload = () => {
+    // Convert HTML to plain text for download
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = content;
+    const plainText = tempDiv.textContent || tempDiv.innerText || "";
+    
     const element = document.createElement("a");
-    const file = new Blob([content], { type: "text/plain" });
+    const file = new Blob([plainText], { type: "text/plain" });
     element.href = URL.createObjectURL(file);
     element.download = `${currentNote?.name || "untitled"}.txt`;
     document.body.appendChild(element);
@@ -193,6 +204,10 @@ const Editor = () => {
   const selectNote = async (note: Note) => {
     setCurrentNote(note);
     setContent(note.content);
+    // Set the HTML content in the editor
+    if (editorRef.current) {
+      editorRef.current.innerHTML = note.content;
+    }
   };
 
   return (
@@ -353,19 +368,24 @@ const Editor = () => {
         </div>
 
         <div
+          ref={editorRef}
           contentEditable
           className={cn(
-            "outline-none mt-16 prose prose-lg max-w-none transition-colors duration-300 font-merriweather",
+            "outline-none mt-16 prose prose-lg max-w-none transition-colors duration-300 font-merriweather min-h-[600px] p-4",
             isDark ? "prose-invert" : "prose-slate",
-            "focus:ring-0"
+            "focus:ring-0",
+            "[&_*]:outline-none [&_p]:margin-0 [&_div]:margin-0"
           )}
           onInput={handleContentChange}
           dir="ltr"
           spellCheck="true"
           suppressContentEditableWarning
-        >
-          {content}
-        </div>
+          dangerouslySetInnerHTML={{ __html: content }}
+          style={{
+            whiteSpace: 'pre-wrap',
+            wordWrap: 'break-word'
+          }}
+        />
       </div>
     </div>
   );

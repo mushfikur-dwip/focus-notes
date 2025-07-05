@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef } from "react";
 import { Bold, Italic, Underline, Save, Download, Moon, Sun, LogIn, PlusSquare, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -374,14 +375,14 @@ const Editor = () => {
             "outline-none mt-16 prose prose-lg max-w-none transition-colors duration-300 font-merriweather min-h-[600px] p-4",
             isDark ? "prose-invert" : "prose-slate",
             "focus:ring-0",
-            "[&_*]:outline-none [&_p]:margin-0 [&_div]:margin-0"
+            "[&_*]:outline-none"
           )}
           onInput={handleContentChange}
-          dir="ltr"
           spellCheck="true"
           suppressContentEditableWarning
-          dangerouslySetInnerHTML={{ __html: content }}
           style={{
+            direction: 'ltr',
+            textAlign: 'left',
             whiteSpace: 'pre-wrap',
             wordWrap: 'break-word'
           }}

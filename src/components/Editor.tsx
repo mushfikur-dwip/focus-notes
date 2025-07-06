@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from "react";
 import { Bold, Italic, Underline, Download, Moon, Sun, PlusSquare, FileText, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -446,7 +445,6 @@ const Editor = () => {
             onInput={handleContentChange}
             spellCheck="true"
             suppressContentEditableWarning
-            placeholder="Start writing your note..."
             style={{
               direction: 'ltr',
               textAlign: 'left',

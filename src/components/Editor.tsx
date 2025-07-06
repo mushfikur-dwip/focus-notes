@@ -1,13 +1,9 @@
+
 import { useState, useEffect, useRef } from "react";
-import { Bold, Italic, Underline, Save, Download, Moon, Sun, LogIn, PlusSquare, FileText } from "lucide-react";
+import { Bold, Italic, Underline, Download, Moon, Sun, PlusSquare, FileText, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { auth, provider } from "@/lib/firebase";
-import { signInWithPopup, signOut, User } from "firebase/auth";
-import { initializeApp } from "firebase/app";
-import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, query, where, getDocs, orderBy } from "firebase/firestore";
-import { NoteEncryption } from "@/lib/encryption";
 import {
   Sheet,
   SheetContent,
@@ -16,26 +12,11 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 
-// Initialize Firestore
-const firebaseConfig = {
-  apiKey: "AIzaSyBw0PucNe-p9nsot2ZTGg4cyrD0TgDC_Ik",
-  authDomain: "focus-note-40b4e.firebaseapp.com",
-  projectId: "focus-note-40b4e",
-  storageBucket: "focus-note-40b4e.appspot.com",
-  messagingSenderId: "992811559836",
-  appId: "1:992811559836:web:9b143358e56b796c04b659",
-  measurementId: "G-HH2MFW6V04"
-};
-
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-
 interface Note {
   id: string;
   name: string;
   content: string;
   lastModified: Date;
-  encryptedContent?: string;
 }
 
 interface LocalStorageNote {
@@ -48,15 +29,16 @@ interface LocalStorageNote {
 
 const STORAGE_KEY = 'focusnote_local_notes';
 const STORAGE_EXPIRY_DAYS = 7;
+const AUTO_SAVE_DELAY = 1000; // 1 second
 
 const Editor = () => {
   const [content, setContent] = useState("");
   const [isDark, setIsDark] = useState(false);
   const [isToolbarVisible, setIsToolbarVisible] = useState(true);
-  const [user, setUser] = useState<User | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
   const [currentNote, setCurrentNote] = useState<Note | null>(null);
   const editorRef = useRef<HTMLDivElement>(null);
+  const autoSaveTimeoutRef = useRef<NodeJS.Timeout>();
 
   // Local Storage Functions
   const saveToLocalStorage = (notes: Note[]) => {
@@ -116,78 +98,45 @@ const Editor = () => {
     }
   };
 
-  useEffect(() => {
-    // Clear expired data on app load
-    clearExpiredLocalStorage();
-    
-    const unsubscribe = auth.onAuthStateChanged((user) => {
-      setUser(user);
-      if (user) {
-        loadNotes(user);
-      } else {
-        // Load from localStorage when not authenticated
-        const localNotes = loadFromLocalStorage();
-        setNotes(localNotes);
-        if (localNotes.length > 0) {
-          toast("Local notes loaded");
-        }
-      }
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  // Auto-save to localStorage when notes change
-  useEffect(() => {
-    if (notes.length > 0) {
-      saveToLocalStorage(notes);
+  const autoSave = (updatedNotes: Note[]) => {
+    // Clear existing timeout
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
     }
-  }, [notes]);
 
-  const loadNotes = async (user: User) => {
-    try {
-      const notesRef = collection(db, 'notes');
-      const q = query(
-        notesRef,
-        where('userId', '==', user.uid),
-        orderBy('lastModified', 'desc')
-      );
-      const querySnapshot = await getDocs(q);
-      
-      const loadedNotes = await Promise.all(
-        querySnapshot.docs.map(async (docSnapshot) => {
-          const data = docSnapshot.data();
-          let decryptedContent = '';
-          
-          try {
-            decryptedContent = await NoteEncryption.decrypt(data.encryptedContent);
-          } catch (error) {
-            console.error('Error decrypting note:', error);
-            decryptedContent = 'Error: Could not decrypt note';
-          }
-          
-          return {
-            id: docSnapshot.id,
-            name: data.name,
-            content: decryptedContent,
-            lastModified: data.lastModified.toDate(),
-          };
-        })
-      );
-      
-      setNotes(loadedNotes);
-      toast("Notes loaded successfully");
-    } catch (error) {
-      console.error("Error loading notes:", error);
-      toast("Error loading notes");
-    }
+    // Set new timeout for auto-save
+    autoSaveTimeoutRef.current = setTimeout(() => {
+      saveToLocalStorage(updatedNotes);
+      console.log("Auto-saved notes to localStorage");
+    }, AUTO_SAVE_DELAY);
   };
+
+  useEffect(() => {
+    // Clear expired data and load notes on app load
+    clearExpiredLocalStorage();
+    const localNotes = loadFromLocalStorage();
+    setNotes(localNotes);
+    
+    if (localNotes.length > 0) {
+      toast.success("Notes loaded from local storage");
+    } else {
+      // Create first note if no notes exist
+      createNewNote();
+    }
+
+    // Cleanup timeout on unmount
+    return () => {
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleContentChange = (e: React.FormEvent<HTMLDivElement>) => {
     const newContent = e.currentTarget.innerHTML || "";
     setContent(newContent);
     
-    // Auto-save current note to localStorage
+    // Auto-save current note
     if (currentNote) {
       const updatedNote = {
         ...currentNote,
@@ -200,6 +149,7 @@ const Editor = () => {
         note.id === currentNote.id ? updatedNote : note
       );
       setNotes(updatedNotes);
+      autoSave(updatedNotes);
     }
   };
 
@@ -214,42 +164,38 @@ const Editor = () => {
     setNotes(updatedNotes);
     setCurrentNote(newNote);
     setContent("");
-    toast("New note created");
+    
+    // Clear editor content
+    if (editorRef.current) {
+      editorRef.current.innerHTML = "";
+    }
+    
+    autoSave(updatedNotes);
+    toast.success("New note created");
   };
 
-  const handleSave = async () => {
-    if (!user || !currentNote) {
-      toast("Please sign in and create a note first");
-      return;
-    }
-
-    try {
-      // Get the HTML content from the editor
-      const htmlContent = editorRef.current?.innerHTML || content;
-      const encryptedContent = await NoteEncryption.encrypt(htmlContent);
-      const noteData = {
-        name: currentNote.name,
-        encryptedContent,
-        lastModified: new Date(),
-        userId: user.uid,
-      };
-
-      if (currentNote.id.length > 10) {
-        // Update existing note
-        const noteRef = doc(db, 'notes', currentNote.id);
-        await updateDoc(noteRef, noteData);
+  const deleteNote = (noteId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    const updatedNotes = notes.filter(note => note.id !== noteId);
+    setNotes(updatedNotes);
+    
+    // If deleting current note, switch to another note or create new one
+    if (currentNote?.id === noteId) {
+      if (updatedNotes.length > 0) {
+        selectNote(updatedNotes[0]);
       } else {
-        // Create new note
-        const docRef = await addDoc(collection(db, 'notes'), noteData);
-        setCurrentNote({ ...currentNote, id: docRef.id });
+        setCurrentNote(null);
+        setContent("");
+        if (editorRef.current) {
+          editorRef.current.innerHTML = "";
+        }
+        createNewNote();
       }
-
-      toast("Note saved securely");
-      loadNotes(user);
-    } catch (error) {
-      console.error("Error saving note:", error);
-      toast("Error saving note");
     }
+    
+    autoSave(updatedNotes);
+    toast.success("Note deleted");
   };
 
   const handleFormat = (command: string) => {
@@ -260,6 +206,11 @@ const Editor = () => {
   };
 
   const handleDownload = () => {
+    if (!currentNote) {
+      toast.error("No note selected");
+      return;
+    }
+
     // Convert HTML to plain text for download
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = content;
@@ -268,11 +219,11 @@ const Editor = () => {
     const element = document.createElement("a");
     const file = new Blob([plainText], { type: "text/plain" });
     element.href = URL.createObjectURL(file);
-    element.download = `${currentNote?.name || "untitled"}.txt`;
+    element.download = `${currentNote.name || "untitled"}.txt`;
     document.body.appendChild(element);
     element.click();
     document.body.removeChild(element);
-    toast("Document downloaded");
+    toast.success("Document downloaded");
   };
 
   const toggleTheme = () => {
@@ -280,39 +231,28 @@ const Editor = () => {
     document.documentElement.classList.toggle("dark");
   };
 
-  const handleSignIn = async () => {
-    try {
-      const result = await signInWithPopup(auth, provider);
-      console.log("Sign in successful", result.user);
-      toast("Signed in successfully");
-    } catch (error: any) {
-      console.error("Sign in error:", error);
-      toast(error.message || "Error signing in");
-    }
-  };
-
-  const handleSignOut = async () => {
-    try {
-      await signOut(auth);
-      setContent("");
-      setNotes([]);
-      setCurrentNote(null);
-      // Load local notes after sign out
-      const localNotes = loadFromLocalStorage();
-      setNotes(localNotes);
-      toast("Signed out successfully");
-    } catch (error) {
-      toast("Error signing out");
-    }
-  };
-
-  const selectNote = async (note: Note) => {
+  const selectNote = (note: Note) => {
     setCurrentNote(note);
     setContent(note.content);
     // Set the HTML content in the editor
     if (editorRef.current) {
       editorRef.current.innerHTML = note.content;
     }
+  };
+
+  const updateNoteName = (noteId: string, newName: string) => {
+    const updatedNotes = notes.map(note => 
+      note.id === noteId 
+        ? { ...note, name: newName, lastModified: new Date() }
+        : note
+    );
+    setNotes(updatedNotes);
+    
+    if (currentNote?.id === noteId) {
+      setCurrentNote({ ...currentNote, name: newName, lastModified: new Date() });
+    }
+    
+    autoSave(updatedNotes);
   };
 
   return (
@@ -323,7 +263,7 @@ const Editor = () => {
       <div className="max-w-4xl mx-auto px-4 py-8">
         <div
           className={cn(
-            "fixed top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 p-2 rounded-lg backdrop-blur-lg transition-all duration-300",
+            "fixed top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 p-2 rounded-lg backdrop-blur-lg transition-all duration-300 z-50",
             isDark ? "bg-slate-800/50" : "bg-white/50",
             isToolbarVisible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-4"
           )}
@@ -341,6 +281,7 @@ const Editor = () => {
           >
             <PlusSquare className="h-4 w-4" />
           </Button>
+          
           <Sheet>
             <SheetTrigger asChild>
               <Button
@@ -356,29 +297,62 @@ const Editor = () => {
             </SheetTrigger>
             <SheetContent side="left">
               <SheetHeader>
-                <SheetTitle>{user ? "Your Encrypted Notes" : "Your Local Notes"}</SheetTitle>
+                <SheetTitle>Your Notes ({notes.length})</SheetTitle>
               </SheetHeader>
-              <div className="mt-4">
+              <div className="mt-4 space-y-2 max-h-[calc(100vh-120px)] overflow-y-auto">
                 {notes.map((note) => (
                   <div
                     key={note.id}
-                    className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer rounded"
+                    className={cn(
+                      "p-3 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer rounded-lg border transition-colors group",
+                      currentNote?.id === note.id && "bg-slate-100 dark:bg-slate-700"
+                    )}
                     onClick={() => selectNote(note)}
                   >
-                    <h3 className="font-medium">{note.name}</h3>
-                    <p className="text-sm text-gray-500">
-                      {new Date(note.lastModified).toLocaleDateString()}
-                    </p>
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1 min-w-0">
+                        <input
+                          type="text"
+                          value={note.name}
+                          onChange={(e) => updateNoteName(note.id, e.target.value)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="font-medium text-sm bg-transparent border-none outline-none w-full truncate"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          {new Date(note.lastModified).toLocaleDateString()} • 
+                          {new Date(note.lastModified).toLocaleTimeString()}
+                        </p>
+                        <p className="text-xs text-gray-400 mt-1 line-clamp-2">
+                          {note.content.replace(/<[^>]*>/g, '').substring(0, 50)}...
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 text-red-500 hover:text-red-700"
+                        onClick={(e) => deleteNote(note.id, e)}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
                   </div>
                 ))}
-                {!user && notes.length > 0 && (
-                  <p className="text-xs text-gray-400 mt-4">
-                    Notes stored locally for 7 days
+                {notes.length === 0 && (
+                  <p className="text-center text-gray-500 mt-8">
+                    No notes yet. Create your first note!
                   </p>
                 )}
+                <div className="mt-4 pt-4 border-t">
+                  <p className="text-xs text-gray-400 text-center">
+                    Notes are stored locally for 7 days
+                  </p>
+                </div>
               </div>
             </SheetContent>
           </Sheet>
+
+          <div className="w-px h-6 bg-slate-200 dark:bg-slate-700" />
+          
           <Button
             variant="ghost"
             size="icon"
@@ -412,18 +386,9 @@ const Editor = () => {
           >
             <Underline className="h-4 w-4" />
           </Button>
+
           <div className="w-px h-6 bg-slate-200 dark:bg-slate-700" />
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleSave}
-            className={cn(
-              "hover:bg-slate-100 dark:hover:bg-slate-700",
-              isDark ? "text-white" : "text-slate-700"
-            )}
-          >
-            <Save className="h-4 w-4" />
-          </Button>
+          
           <Button
             variant="ghost"
             size="icon"
@@ -435,7 +400,9 @@ const Editor = () => {
           >
             <Download className="h-4 w-4" />
           </Button>
+
           <div className="w-px h-6 bg-slate-200 dark:bg-slate-700" />
+          
           <Button
             variant="ghost"
             size="icon"
@@ -447,53 +414,47 @@ const Editor = () => {
           >
             {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </Button>
-          <div className="w-px h-6 bg-slate-200 dark:bg-slate-700" />
-          {user ? (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleSignOut}
-              className={cn(
-                "hover:bg-slate-100 dark:hover:bg-slate-700",
-                isDark ? "text-white" : "text-slate-700"
-              )}
-            >
-              <img src={user.photoURL || ""} alt="Profile" className="w-4 h-4 rounded-full" />
-            </Button>
-          ) : (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleSignIn}
-              className={cn(
-                "hover:bg-slate-100 dark:hover:bg-slate-700",
-                isDark ? "text-white" : "text-slate-700"
-              )}
-            >
-              <LogIn className="h-4 w-4" />
-            </Button>
-          )}
         </div>
 
-        <div
-          ref={editorRef}
-          contentEditable
-          className={cn(
-            "outline-none mt-16 prose prose-lg max-w-none transition-colors duration-300 font-merriweather min-h-[600px] p-4",
-            isDark ? "prose-invert" : "prose-slate",
-            "focus:ring-0",
-            "[&_*]:outline-none"
+        <div className="mt-16">
+          {currentNote && (
+            <div className="mb-4">
+              <h1 className={cn(
+                "text-2xl font-bold",
+                isDark ? "text-white" : "text-slate-900"
+              )}>
+                {currentNote.name}
+              </h1>
+              <p className={cn(
+                "text-sm",
+                isDark ? "text-slate-400" : "text-slate-600"
+              )}>
+                Last modified: {new Date(currentNote.lastModified).toLocaleString()}
+              </p>
+            </div>
           )}
-          onInput={handleContentChange}
-          spellCheck="true"
-          suppressContentEditableWarning
-          style={{
-            direction: 'ltr',
-            textAlign: 'left',
-            whiteSpace: 'pre-wrap',
-            wordWrap: 'break-word'
-          }}
-        />
+          
+          <div
+            ref={editorRef}
+            contentEditable
+            className={cn(
+              "outline-none prose prose-lg max-w-none transition-colors duration-300 font-merriweather min-h-[600px] p-6 rounded-lg border",
+              isDark ? "prose-invert bg-slate-800 border-slate-700" : "prose-slate bg-white border-slate-200",
+              "focus:ring-2 focus:ring-blue-500 focus:border-transparent",
+              "[&_*]:outline-none"
+            )}
+            onInput={handleContentChange}
+            spellCheck="true"
+            suppressContentEditableWarning
+            placeholder="Start writing your note..."
+            style={{
+              direction: 'ltr',
+              textAlign: 'left',
+              whiteSpace: 'pre-wrap',
+              wordWrap: 'break-word'
+            }}
+          />
+        </div>
       </div>
     </div>
   );

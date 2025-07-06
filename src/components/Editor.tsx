@@ -28,12 +28,12 @@ interface LocalStorageNote {
 
 const STORAGE_KEY = 'focusnote_local_notes';
 const STORAGE_EXPIRY_DAYS = 7;
-const AUTO_SAVE_DELAY = 1000; // 1 second
+const AUTO_SAVE_DELAY = 1000;
 
 const Editor = () => {
   const [content, setContent] = useState("");
   const [isDark, setIsDark] = useState(false);
-  const [isToolbarVisible, setIsToolbarVisible] = useState(true);
+  const [isToolbarVisible, setIsToolbarVisible] = useState(false);
   const [notes, setNotes] = useState<Note[]>([]);
   const [currentNote, setCurrentNote] = useState<Note | null>(null);
   const editorRef = useRef<HTMLDivElement>(null);
@@ -117,6 +117,11 @@ const Editor = () => {
     setNotes(localNotes);
     
     if (localNotes.length > 0) {
+      setCurrentNote(localNotes[0]);
+      setContent(localNotes[0].content);
+      if (editorRef.current) {
+        editorRef.current.innerHTML = localNotes[0].content;
+      }
       toast.success("Notes loaded from local storage");
     } else {
       // Create first note if no notes exist
@@ -256,203 +261,178 @@ const Editor = () => {
 
   return (
     <div className={cn(
-      "min-h-screen transition-colors duration-300",
-      isDark ? "bg-slate-900" : "bg-white"
+      "min-h-screen transition-colors duration-300 relative",
+      isDark ? "bg-gray-900" : "bg-white"
     )}>
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        <div
-          className={cn(
-            "fixed top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 p-2 rounded-lg backdrop-blur-lg transition-all duration-300 z-50",
-            isDark ? "bg-slate-800/50" : "bg-white/50",
-            isToolbarVisible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-4"
-          )}
-          onMouseEnter={() => setIsToolbarVisible(true)}
-          onMouseLeave={() => setIsToolbarVisible(false)}
-        >
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={createNewNote}
-            className={cn(
-              "hover:bg-slate-100 dark:hover:bg-slate-700",
-              isDark ? "text-white" : "text-slate-700"
-            )}
-          >
-            <PlusSquare className="h-4 w-4" />
-          </Button>
-          
-          <Sheet>
-            <SheetTrigger asChild>
+      {/* Floating Toolbar - blank.page style */}
+      <div
+        className={cn(
+          "fixed top-6 left-1/2 -translate-x-1/2 flex items-center gap-1 px-3 py-2 rounded-full backdrop-blur-md transition-all duration-300 z-50 border shadow-lg",
+          isDark ? "bg-gray-800/80 border-gray-700" : "bg-white/80 border-gray-200",
+          isToolbarVisible ? "opacity-100 translate-y-0" : "opacity-30 -translate-y-1"
+        )}
+        onMouseEnter={() => setIsToolbarVisible(true)}
+        onMouseLeave={() => setIsToolbarVisible(false)}
+      >
+        <Sheet>
+          <SheetTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className={cn(
+                "h-8 w-8 p-0 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700",
+                isDark ? "text-gray-300" : "text-gray-600"
+              )}
+            >
+              <FileText className="h-4 w-4" />
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="left" className="w-80">
+            <SheetHeader>
+              <SheetTitle>Notes ({notes.length})</SheetTitle>
+            </SheetHeader>
+            <div className="mt-6 space-y-3 max-h-[calc(100vh-120px)] overflow-y-auto">
               <Button
-                variant="ghost"
-                size="icon"
-                className={cn(
-                  "hover:bg-slate-100 dark:hover:bg-slate-700",
-                  isDark ? "text-white" : "text-slate-700"
-                )}
+                onClick={createNewNote}
+                className="w-full justify-start gap-2 h-10"
+                variant="outline"
               >
-                <FileText className="h-4 w-4" />
+                <PlusSquare className="h-4 w-4" />
+                New Note
               </Button>
-            </SheetTrigger>
-            <SheetContent side="left">
-              <SheetHeader>
-                <SheetTitle>Your Notes ({notes.length})</SheetTitle>
-              </SheetHeader>
-              <div className="mt-4 space-y-2 max-h-[calc(100vh-120px)] overflow-y-auto">
-                {notes.map((note) => (
-                  <div
-                    key={note.id}
-                    className={cn(
-                      "p-3 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer rounded-lg border transition-colors group",
-                      currentNote?.id === note.id && "bg-slate-100 dark:bg-slate-700"
-                    )}
-                    onClick={() => selectNote(note)}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1 min-w-0">
-                        <input
-                          type="text"
-                          value={note.name}
-                          onChange={(e) => updateNoteName(note.id, e.target.value)}
-                          onClick={(e) => e.stopPropagation()}
-                          className="font-medium text-sm bg-transparent border-none outline-none w-full truncate"
-                        />
-                        <p className="text-xs text-gray-500 mt-1">
-                          {new Date(note.lastModified).toLocaleDateString()} • 
-                          {new Date(note.lastModified).toLocaleTimeString()}
-                        </p>
-                        <p className="text-xs text-gray-400 mt-1 line-clamp-2">
-                          {note.content.replace(/<[^>]*>/g, '').substring(0, 50)}...
-                        </p>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 text-red-500 hover:text-red-700"
-                        onClick={(e) => deleteNote(note.id, e)}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
+              
+              {notes.map((note) => (
+                <div
+                  key={note.id}
+                  className={cn(
+                    "p-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer rounded-lg border transition-colors group",
+                    currentNote?.id === note.id && "bg-gray-50 dark:bg-gray-800 border-blue-200"
+                  )}
+                  onClick={() => selectNote(note)}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <input
+                        type="text"
+                        value={note.name}
+                        onChange={(e) => updateNoteName(note.id, e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="font-medium text-sm bg-transparent border-none outline-none w-full truncate"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        {new Date(note.lastModified).toLocaleDateString()}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1 line-clamp-2">
+                        {note.content.replace(/<[^>]*>/g, '').substring(0, 50)}...
+                      </p>
                     </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                      onClick={(e) => deleteNote(note.id, e)}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
                   </div>
-                ))}
-                {notes.length === 0 && (
-                  <p className="text-center text-gray-500 mt-8">
-                    No notes yet. Create your first note!
-                  </p>
-                )}
-                <div className="mt-4 pt-4 border-t">
-                  <p className="text-xs text-gray-400 text-center">
-                    Notes are stored locally for 7 days
-                  </p>
                 </div>
-              </div>
-            </SheetContent>
-          </Sheet>
-
-          <div className="w-px h-6 bg-slate-200 dark:bg-slate-700" />
-          
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => handleFormat("bold")}
-            className={cn(
-              "hover:bg-slate-100 dark:hover:bg-slate-700",
-              isDark ? "text-white" : "text-slate-700"
-            )}
-          >
-            <Bold className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => handleFormat("italic")}
-            className={cn(
-              "hover:bg-slate-100 dark:hover:bg-slate-700",
-              isDark ? "text-white" : "text-slate-700"
-            )}
-          >
-            <Italic className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => handleFormat("underline")}
-            className={cn(
-              "hover:bg-slate-100 dark:hover:bg-slate-700",
-              isDark ? "text-white" : "text-slate-700"
-            )}
-          >
-            <Underline className="h-4 w-4" />
-          </Button>
-
-          <div className="w-px h-6 bg-slate-200 dark:bg-slate-700" />
-          
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleDownload}
-            className={cn(
-              "hover:bg-slate-100 dark:hover:bg-slate-700",
-              isDark ? "text-white" : "text-slate-700"
-            )}
-          >
-            <Download className="h-4 w-4" />
-          </Button>
-
-          <div className="w-px h-6 bg-slate-200 dark:bg-slate-700" />
-          
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={toggleTheme}
-            className={cn(
-              "hover:bg-slate-100 dark:hover:bg-slate-700",
-              isDark ? "text-white" : "text-slate-700"
-            )}
-          >
-            {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          </Button>
-        </div>
-
-        <div className="mt-16">
-          {currentNote && (
-            <div className="mb-4">
-              <h1 className={cn(
-                "text-2xl font-bold",
-                isDark ? "text-white" : "text-slate-900"
-              )}>
-                {currentNote.name}
-              </h1>
-              <p className={cn(
-                "text-sm",
-                isDark ? "text-slate-400" : "text-slate-600"
-              )}>
-                Last modified: {new Date(currentNote.lastModified).toLocaleString()}
-              </p>
+              ))}
             </div>
+          </SheetContent>
+        </Sheet>
+
+        <div className="w-px h-4 bg-gray-300 dark:bg-gray-600" />
+        
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => handleFormat("bold")}
+          className={cn(
+            "h-8 w-8 p-0 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700",
+            isDark ? "text-gray-300" : "text-gray-600"
           )}
-          
-          <div
-            ref={editorRef}
-            contentEditable
-            className={cn(
-              "outline-none prose prose-lg max-w-none transition-colors duration-300 font-merriweather min-h-[600px] p-6 rounded-lg border",
-              isDark ? "prose-invert bg-slate-800 border-slate-700" : "prose-slate bg-white border-slate-200",
-              "focus:ring-2 focus:ring-blue-500 focus:border-transparent",
-              "[&_*]:outline-none"
-            )}
-            onInput={handleContentChange}
-            spellCheck="true"
-            suppressContentEditableWarning
-            style={{
-              direction: 'ltr',
-              textAlign: 'left',
-              whiteSpace: 'pre-wrap',
-              wordWrap: 'break-word'
-            }}
-          />
-        </div>
+        >
+          <Bold className="h-4 w-4" />
+        </Button>
+        
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => handleFormat("italic")}
+          className={cn(
+            "h-8 w-8 p-0 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700",
+            isDark ? "text-gray-300" : "text-gray-600"
+          )}
+        >
+          <Italic className="h-4 w-4" />
+        </Button>
+        
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => handleFormat("underline")}
+          className={cn(
+            "h-8 w-8 p-0 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700",
+            isDark ? "text-gray-300" : "text-gray-600"
+          )}
+        >
+          <Underline className="h-4 w-4" />
+        </Button>
+
+        <div className="w-px h-4 bg-gray-300 dark:bg-gray-600" />
+        
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleDownload}
+          className={cn(
+            "h-8 w-8 p-0 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700",
+            isDark ? "text-gray-300" : "text-gray-600"
+          )}
+        >
+          <Download className="h-4 w-4" />
+        </Button>
+
+        <div className="w-px h-4 bg-gray-300 dark:bg-gray-600" />
+        
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={toggleTheme}
+          className={cn(
+            "h-8 w-8 p-0 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700",
+            isDark ? "text-gray-300" : "text-gray-600"
+          )}
+        >
+          {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+        </Button>
+      </div>
+
+      {/* Main Content Area - blank.page style */}
+      <div className="max-w-3xl mx-auto px-6 py-20">
+        <div
+          ref={editorRef}
+          contentEditable
+          className={cn(
+            "outline-none min-h-[calc(100vh-8rem)] text-lg leading-relaxed transition-colors duration-300",
+            isDark ? "text-gray-100" : "text-gray-900",
+            "focus:outline-none",
+            "[&_*]:outline-none",
+            "font-normal"
+          )}
+          onInput={handleContentChange}
+          spellCheck="true"
+          suppressContentEditableWarning
+          style={{
+            direction: 'ltr',
+            textAlign: 'left',
+            whiteSpace: 'pre-wrap',
+            wordWrap: 'break-word',
+            lineHeight: '1.6',
+            fontSize: '18px',
+            fontFamily: 'system-ui, -apple-system, sans-serif'
+          }}
+        />
       </div>
     </div>
   );

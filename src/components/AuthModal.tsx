@@ -128,18 +128,23 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
               {loading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Sending...
+                  Sending OTP...
                 </>
               ) : (
-                "Send Magic Link"
+                "Send OTP Code"
               )}
             </Button>
           </form>
         ) : (
           <form onSubmit={handleOtpSubmit} className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              We sent a 6-digit code to <strong>{email}</strong>
-            </p>
+            <div className="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg p-3">
+              <p className="text-sm text-green-700 dark:text-green-300">
+                ✓ Email sent to <strong>{email}</strong>
+              </p>
+              <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                Email এ 6-digit OTP code আছে, সেটা নিচে enter করুন
+              </p>
+            </div>
 
             <div className="space-y-2">
               <Label htmlFor="otp">Verification Code</Label>

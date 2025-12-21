@@ -29,12 +29,10 @@ export function useAuth() {
   }, []);
 
   const signInWithOtp = async (email: string) => {
-    const redirectUrl = `${window.location.origin}/`;
-    
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: redirectUrl,
+        shouldCreateUser: true,
       },
     });
 
@@ -43,7 +41,7 @@ export function useAuth() {
       return { error };
     }
 
-    toast.success("Check your email for the magic link!");
+    toast.success("OTP code পাঠানো হয়েছে! Email চেক করুন।");
     return { error: null };
   };
 

@@ -28,37 +28,63 @@ export function useAuth() {
     return () => subscription.unsubscribe();
   }, []);
 
-  const signInWithOtp = async (email: string) => {
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        shouldCreateUser: true,
-      },
-    });
+  const sendOtp = async (email: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke("send-otp", {
+        body: { email },
+      });
 
-    if (error) {
-      toast.error(error.message);
-      return { error };
+      if (error) {
+        toast.error(error.message || "Failed to send OTP");
+        return { error };
+      }
+
+      if (data?.error) {
+        toast.error(data.error);
+        return { error: data.error };
+      }
+
+      toast.success("OTP কোড পাঠানো হয়েছে! Email চেক করুন।");
+      return { error: null };
+    } catch (err: any) {
+      toast.error(err.message || "Failed to send OTP");
+      return { error: err };
     }
-
-    toast.success("OTP code পাঠানো হয়েছে! Email চেক করুন।");
-    return { error: null };
   };
 
-  const verifyOtp = async (email: string, token: string) => {
-    const { error } = await supabase.auth.verifyOtp({
-      email,
-      token,
-      type: "email",
-    });
+  const verifyOtp = async (email: string, code: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke("verify-otp", {
+        body: { email, code },
+      });
 
-    if (error) {
-      toast.error(error.message);
-      return { error };
+      if (error) {
+        toast.error(error.message || "Invalid OTP");
+        return { error };
+      }
+
+      if (data?.error) {
+        toast.error(data.error);
+        return { error: data.error };
+      }
+
+      if (data?.session) {
+        // Set the session manually
+        await supabase.auth.setSession({
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token,
+        });
+
+        toast.success("সফলভাবে লগইন হয়েছে!");
+        return { error: null };
+      }
+
+      toast.error("Authentication failed");
+      return { error: "Authentication failed" };
+    } catch (err: any) {
+      toast.error(err.message || "Verification failed");
+      return { error: err };
     }
-
-    toast.success("Successfully logged in!");
-    return { error: null };
   };
 
   const signOut = async () => {
@@ -67,7 +93,7 @@ export function useAuth() {
       toast.error(error.message);
       return { error };
     }
-    toast.success("Signed out successfully");
+    toast.success("সাইন আউট হয়েছে");
     return { error: null };
   };
 
@@ -75,7 +101,7 @@ export function useAuth() {
     user,
     session,
     loading,
-    signInWithOtp,
+    sendOtp,
     verifyOtp,
     signOut,
     isAuthenticated: !!user,

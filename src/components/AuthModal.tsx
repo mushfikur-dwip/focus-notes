@@ -13,8 +13,8 @@ import {
 } from "@/components/ui/dialog";
 import { Loader2, Mail, KeyRound, Cloud, Sparkles } from "lucide-react";
 
-const emailSchema = z.string().email("Please enter a valid email address");
-const otpSchema = z.string().length(6, "OTP must be 6 digits");
+const emailSchema = z.string().email("সঠিক email দিন");
+const otpSchema = z.string().length(6, "OTP ৬ সংখ্যার হতে হবে");
 
 interface AuthModalProps {
   open: boolean;
@@ -22,7 +22,7 @@ interface AuthModalProps {
 }
 
 export function AuthModal({ open, onOpenChange }: AuthModalProps) {
-  const { signInWithOtp, verifyOtp } = useAuth();
+  const { sendOtp, verifyOtp } = useAuth();
   const [step, setStep] = useState<"email" | "otp">("email");
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
@@ -40,7 +40,7 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
     }
 
     setLoading(true);
-    const { error } = await signInWithOtp(email);
+    const { error } = await sendOtp(email);
     setLoading(false);
 
     if (!error) {
@@ -67,6 +67,8 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
       setStep("email");
       setEmail("");
       setOtp("");
+    } else {
+      setError("ভুল OTP কোড। আবার চেষ্টা করুন।");
     }
   };
 
@@ -76,16 +78,23 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
     setError("");
   };
 
+  const handleResendOtp = async () => {
+    setLoading(true);
+    setError("");
+    await sendOtp(email);
+    setLoading(false);
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Cloud className="h-5 w-5 text-blue-500" />
-            Unlock Cloud Sync
+            Cloud Sync চালু করুন
           </DialogTitle>
           <DialogDescription>
-            Sign in with your email to unlock premium features
+            Email দিয়ে সাইন ইন করুন প্রিমিয়াম ফিচার পেতে
           </DialogDescription>
         </DialogHeader>
 
@@ -96,11 +105,11 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
             <span className="font-medium text-sm">Premium Features</span>
           </div>
           <ul className="text-sm text-muted-foreground space-y-1">
-            <li>✓ Unlimited notes</li>
-            <li>✓ Sync across all devices</li>
-            <li>✓ Voice dictation</li>
-            <li>✓ Tags & folders</li>
-            <li>✓ Export to PDF/Word</li>
+            <li>✓ সীমাহীন নোট</li>
+            <li>✓ সব ডিভাইসে সিঙ্ক</li>
+            <li>✓ ভয়েস ডিক্টেশন</li>
+            <li>✓ ট্যাগ ও ফোল্ডার</li>
+            <li>✓ PDF/Word এ এক্সপোর্ট</li>
           </ul>
         </div>
 
@@ -128,10 +137,10 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
               {loading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Sending OTP...
+                  OTP পাঠাচ্ছে...
                 </>
               ) : (
-                "Send OTP Code"
+                "OTP কোড পাঠান"
               )}
             </Button>
           </form>
@@ -139,26 +148,27 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
           <form onSubmit={handleOtpSubmit} className="space-y-4">
             <div className="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg p-3">
               <p className="text-sm text-green-700 dark:text-green-300">
-                ✓ Email sent to <strong>{email}</strong>
+                ✓ <strong>{email}</strong> এ OTP পাঠানো হয়েছে
               </p>
               <p className="text-xs text-green-600 dark:text-green-400 mt-1">
-                Email এ 6-digit OTP code আছে, সেটা নিচে enter করুন
+                Email এ পাঠানো ৬-সংখ্যার কোড নিচে দিন
               </p>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="otp">Verification Code</Label>
+              <Label htmlFor="otp">OTP কোড</Label>
               <div className="relative">
                 <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   id="otp"
                   type="text"
-                  placeholder="123456"
+                  placeholder="১২৩৪৫৬"
                   value={otp}
                   onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                  className="pl-10 text-center tracking-widest"
+                  className="pl-10 text-center tracking-[0.5em] text-xl font-mono"
                   disabled={loading}
                   maxLength={6}
+                  autoFocus
                 />
               </div>
             </div>
@@ -172,19 +182,29 @@ export function AuthModal({ open, onOpenChange }: AuthModalProps) {
                 onClick={handleBack}
                 disabled={loading}
               >
-                Back
+                পেছনে
               </Button>
-              <Button type="submit" className="flex-1" disabled={loading}>
+              <Button type="submit" className="flex-1" disabled={loading || otp.length !== 6}>
                 {loading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Verifying...
+                    যাচাই করছে...
                   </>
                 ) : (
-                  "Verify"
+                  "যাচাই করুন"
                 )}
               </Button>
             </div>
+
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full text-sm"
+              onClick={handleResendOtp}
+              disabled={loading}
+            >
+              কোড পাননি? আবার পাঠান
+            </Button>
           </form>
         )}
       </DialogContent>

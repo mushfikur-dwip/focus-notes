@@ -1,7 +1,30 @@
 import { useState, useEffect, useRef } from "react";
-import { Bold, Italic, Underline, Download, Moon, Sun, PlusSquare, FileText, Trash2 } from "lucide-react";
+import {
+  Bold,
+  Italic,
+  Underline,
+  Download,
+  Moon,
+  Sun,
+  PlusSquare,
+  FileText,
+  Trash2,
+  Mic,
+  MicOff,
+  Cloud,
+  CloudOff,
+  LogOut,
+  Tag,
+  FolderPlus,
+  Folder,
+  FileDown,
+  Loader2,
+  RefreshCw,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import {
   Sheet,
@@ -10,224 +33,133 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-
-interface Note {
-  id: string;
-  name: string;
-  content: string;
-  lastModified: Date;
-}
-
-interface LocalStorageNote {
-  id: string;
-  name: string;
-  content: string;
-  lastModified: string;
-  expiresAt: string;
-}
-
-const STORAGE_KEY = 'focusnote_local_notes';
-const STORAGE_EXPIRY_DAYS = 7;
-const AUTO_SAVE_DELAY = 1000;
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { useAuth } from "@/hooks/useAuth";
+import { useNotes } from "@/hooks/useNotes";
+import { useVoiceDictation } from "@/hooks/useVoiceDictation";
+import { AuthModal } from "@/components/AuthModal";
+import { exportToTxt, exportToMarkdown, exportToHtml, exportToPdf } from "@/lib/export";
 
 const Editor = () => {
-  const [content, setContent] = useState("");
+  const { user, isAuthenticated, signOut, loading: authLoading } = useAuth();
+  const {
+    notes,
+    folders,
+    currentNote,
+    loading: notesLoading,
+    syncing,
+    setCurrentNote,
+    createNote,
+    updateNote,
+    deleteNote,
+    createFolder,
+    deleteFolder,
+    syncToCloud,
+    addTagToNote,
+    removeTagFromNote,
+  } = useNotes();
+  const { isRecording, isTranscribing, toggleRecording } = useVoiceDictation();
+
   const [isDark, setIsDark] = useState(false);
   const [isToolbarVisible, setIsToolbarVisible] = useState(false);
-  const [notes, setNotes] = useState<Note[]>([]);
-  const [currentNote, setCurrentNote] = useState<Note | null>(null);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [newTag, setNewTag] = useState("");
+  const [newFolderName, setNewFolderName] = useState("");
   const editorRef = useRef<HTMLDivElement>(null);
-  const autoSaveTimeoutRef = useRef<NodeJS.Timeout>();
 
-  // Local Storage Functions
-  const saveToLocalStorage = (notes: Note[]) => {
-    const expiryDate = new Date();
-    expiryDate.setDate(expiryDate.getDate() + STORAGE_EXPIRY_DAYS);
-    
-    const localNotes: LocalStorageNote[] = notes.map(note => ({
-      ...note,
-      lastModified: note.lastModified.toISOString(),
-      expiresAt: expiryDate.toISOString()
-    }));
-    
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(localNotes));
-  };
-
-  const loadFromLocalStorage = (): Note[] => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (!stored) return [];
-      
-      const localNotes: LocalStorageNote[] = JSON.parse(stored);
-      const now = new Date();
-      
-      // Filter out expired notes
-      const validNotes = localNotes.filter(note => new Date(note.expiresAt) > now);
-      
-      // Clean up expired notes
-      if (validNotes.length !== localNotes.length) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(validNotes));
-      }
-      
-      return validNotes.map(note => ({
-        ...note,
-        lastModified: new Date(note.lastModified)
-      }));
-    } catch (error) {
-      console.error("Error loading from localStorage:", error);
-      return [];
-    }
-  };
-
-  const clearExpiredLocalStorage = () => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (!stored) return;
-    
-    try {
-      const localNotes: LocalStorageNote[] = JSON.parse(stored);
-      const now = new Date();
-      const validNotes = localNotes.filter(note => new Date(note.expiresAt) > now);
-      
-      if (validNotes.length !== localNotes.length) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(validNotes));
-        console.log(`Cleared ${localNotes.length - validNotes.length} expired notes from localStorage`);
-      }
-    } catch (error) {
-      console.error("Error clearing expired localStorage:", error);
-    }
-  };
-
-  const autoSave = (updatedNotes: Note[]) => {
-    // Clear existing timeout
-    if (autoSaveTimeoutRef.current) {
-      clearTimeout(autoSaveTimeoutRef.current);
-    }
-
-    // Set new timeout for auto-save
-    autoSaveTimeoutRef.current = setTimeout(() => {
-      saveToLocalStorage(updatedNotes);
-      console.log("Auto-saved notes to localStorage");
-    }, AUTO_SAVE_DELAY);
-  };
-
+  // Load content when current note changes
   useEffect(() => {
-    // Clear expired data and load notes on app load
-    clearExpiredLocalStorage();
-    const localNotes = loadFromLocalStorage();
-    setNotes(localNotes);
-    
-    if (localNotes.length > 0) {
-      setCurrentNote(localNotes[0]);
-      setContent(localNotes[0].content);
-      if (editorRef.current) {
-        editorRef.current.innerHTML = localNotes[0].content;
-      }
-      toast.success("Notes loaded from local storage");
-    } else {
-      // Create first note if no notes exist
-      createNewNote();
+    if (currentNote && editorRef.current) {
+      editorRef.current.innerHTML = currentNote.content;
     }
+  }, [currentNote?.id]);
 
-    // Cleanup timeout on unmount
-    return () => {
-      if (autoSaveTimeoutRef.current) {
-        clearTimeout(autoSaveTimeoutRef.current);
-      }
-    };
-  }, []);
+  // Create first note if none exist
+  useEffect(() => {
+    if (!notesLoading && notes.length === 0 && !authLoading) {
+      createNote();
+    }
+  }, [notesLoading, notes.length, authLoading]);
 
   const handleContentChange = (e: React.FormEvent<HTMLDivElement>) => {
     const newContent = e.currentTarget.innerHTML || "";
-    setContent(newContent);
-    
-    // Auto-save current note
     if (currentNote) {
-      const updatedNote = {
-        ...currentNote,
-        content: newContent,
-        lastModified: new Date()
-      };
-      setCurrentNote(updatedNote);
-      
-      const updatedNotes = notes.map(note => 
-        note.id === currentNote.id ? updatedNote : note
-      );
-      setNotes(updatedNotes);
-      autoSave(updatedNotes);
+      updateNote(currentNote.id, { content: newContent });
     }
-  };
-
-  const createNewNote = () => {
-    const newNote: Note = {
-      id: Date.now().toString(),
-      name: `Note ${notes.length + 1}`,
-      content: "",
-      lastModified: new Date()
-    };
-    const updatedNotes = [newNote, ...notes];
-    setNotes(updatedNotes);
-    setCurrentNote(newNote);
-    setContent("");
-    
-    // Clear editor content
-    if (editorRef.current) {
-      editorRef.current.innerHTML = "";
-    }
-    
-    autoSave(updatedNotes);
-    toast.success("New note created");
-  };
-
-  const deleteNote = (noteId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    
-    const updatedNotes = notes.filter(note => note.id !== noteId);
-    setNotes(updatedNotes);
-    
-    // If deleting current note, switch to another note or create new one
-    if (currentNote?.id === noteId) {
-      if (updatedNotes.length > 0) {
-        selectNote(updatedNotes[0]);
-      } else {
-        setCurrentNote(null);
-        setContent("");
-        if (editorRef.current) {
-          editorRef.current.innerHTML = "";
-        }
-        createNewNote();
-      }
-    }
-    
-    autoSave(updatedNotes);
-    toast.success("Note deleted");
   };
 
   const handleFormat = (command: string) => {
     document.execCommand(command, false);
-    if (editorRef.current) {
-      editorRef.current.focus();
+    editorRef.current?.focus();
+  };
+
+  const handleVoiceDictation = async () => {
+    const transcription = await toggleRecording();
+    if (transcription && editorRef.current) {
+      // Append transcription to editor
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        range.insertNode(document.createTextNode(transcription + " "));
+        range.collapse(false);
+      } else {
+        editorRef.current.innerHTML += transcription + " ";
+      }
+
+      // Trigger content change
+      if (currentNote) {
+        updateNote(currentNote.id, { content: editorRef.current.innerHTML });
+      }
     }
   };
 
-  const handleDownload = () => {
+  const handleExport = (format: "txt" | "md" | "html" | "pdf") => {
     if (!currentNote) {
       toast.error("No note selected");
       return;
     }
 
-    // Convert HTML to plain text for download
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = content;
-    const plainText = tempDiv.textContent || tempDiv.innerText || "";
-    
-    const element = document.createElement("a");
-    const file = new Blob([plainText], { type: "text/plain" });
-    element.href = URL.createObjectURL(file);
-    element.download = `${currentNote.name || "untitled"}.txt`;
-    document.body.appendChild(element);
-    element.click();
-    document.body.removeChild(element);
-    toast.success("Document downloaded");
+    const filename = currentNote.name.replace(/[^a-z0-9]/gi, "_").toLowerCase();
+
+    switch (format) {
+      case "txt":
+        exportToTxt(currentNote.content, filename);
+        break;
+      case "md":
+        exportToMarkdown(currentNote.content, filename);
+        break;
+      case "html":
+        exportToHtml(currentNote.content, filename, currentNote.name);
+        break;
+      case "pdf":
+        exportToPdf(currentNote.content, filename, currentNote.name);
+        break;
+    }
+
+    toast.success(`Exported as ${format.toUpperCase()}`);
+  };
+
+  const handleAddTag = () => {
+    if (!newTag.trim() || !currentNote) return;
+    addTagToNote(currentNote.id, newTag.trim());
+    setNewTag("");
+  };
+
+  const handleCreateFolder = async () => {
+    if (!newFolderName.trim()) return;
+    await createFolder(newFolderName.trim());
+    setNewFolderName("");
   };
 
   const toggleTheme = () => {
@@ -235,36 +167,27 @@ const Editor = () => {
     document.documentElement.classList.toggle("dark");
   };
 
-  const selectNote = (note: Note) => {
+  const selectNote = (note: typeof currentNote) => {
+    if (!note) return;
     setCurrentNote(note);
-    setContent(note.content);
-    // Set the HTML content in the editor
-    if (editorRef.current) {
-      editorRef.current.innerHTML = note.content;
-    }
   };
 
-  const updateNoteName = (noteId: string, newName: string) => {
-    const updatedNotes = notes.map(note => 
-      note.id === noteId 
-        ? { ...note, name: newName, lastModified: new Date() }
-        : note
+  if (authLoading || notesLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
     );
-    setNotes(updatedNotes);
-    
-    if (currentNote?.id === noteId) {
-      setCurrentNote({ ...currentNote, name: newName, lastModified: new Date() });
-    }
-    
-    autoSave(updatedNotes);
-  };
+  }
 
   return (
-    <div className={cn(
-      "min-h-screen transition-colors duration-300 relative",
-      isDark ? "bg-gray-900" : "bg-white"
-    )}>
-      {/* Floating Toolbar - blank.page style */}
+    <div
+      className={cn(
+        "min-h-screen transition-colors duration-300 relative",
+        isDark ? "bg-gray-900" : "bg-white"
+      )}
+    >
+      {/* Floating Toolbar */}
       <div
         className={cn(
           "fixed top-6 left-1/2 -translate-x-1/2 flex items-center gap-1 px-3 py-2 rounded-full backdrop-blur-md transition-all duration-300 z-50 border shadow-lg",
@@ -274,14 +197,15 @@ const Editor = () => {
         onMouseEnter={() => setIsToolbarVisible(true)}
         onMouseLeave={() => setIsToolbarVisible(false)}
       >
+        {/* Notes Panel */}
         <Sheet>
           <SheetTrigger asChild>
             <Button
               variant="ghost"
               size="sm"
               className={cn(
-                "h-8 w-8 p-0 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700",
-                isDark ? "text-gray-300" : "text-gray-600"
+                "h-8 w-8 p-0 rounded-full",
+                isDark ? "text-gray-300 hover:bg-gray-700" : "text-gray-600 hover:bg-gray-100"
               )}
             >
               <FileText className="h-4 w-4" />
@@ -289,48 +213,107 @@ const Editor = () => {
           </SheetTrigger>
           <SheetContent side="left" className="w-80">
             <SheetHeader>
-              <SheetTitle>Notes ({notes.length})</SheetTitle>
+              <SheetTitle className="flex items-center justify-between">
+                <span>Notes ({notes.length})</span>
+                {isAuthenticated && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={syncToCloud}
+                    disabled={syncing}
+                    className="h-8"
+                  >
+                    {syncing ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4" />
+                    )}
+                  </Button>
+                )}
+              </SheetTitle>
             </SheetHeader>
-            <div className="mt-6 space-y-3 max-h-[calc(100vh-120px)] overflow-y-auto">
-              <Button
-                onClick={createNewNote}
-                className="w-full justify-start gap-2 h-10"
-                variant="outline"
-              >
-                <PlusSquare className="h-4 w-4" />
-                New Note
-              </Button>
-              
+
+            <div className="mt-6 space-y-3 max-h-[calc(100vh-200px)] overflow-y-auto">
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => createNote()}
+                  className="flex-1 justify-start gap-2 h-10"
+                  variant="outline"
+                >
+                  <PlusSquare className="h-4 w-4" />
+                  New Note
+                </Button>
+              </div>
+
+              {/* Folders Section */}
+              {isAuthenticated && folders.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground font-medium">Folders</p>
+                  {folders.map((folder) => (
+                    <div
+                      key={folder.id}
+                      className="flex items-center gap-2 p-2 rounded-lg hover:bg-muted/50"
+                    >
+                      <Folder className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm flex-1">{folder.name}</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100"
+                        onClick={() => deleteFolder(folder.id)}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Notes List */}
               {notes.map((note) => (
                 <div
                   key={note.id}
                   className={cn(
-                    "p-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer rounded-lg border transition-colors group",
-                    currentNote?.id === note.id && "bg-gray-50 dark:bg-gray-800 border-blue-200"
+                    "p-3 hover:bg-muted/50 cursor-pointer rounded-lg border transition-colors group",
+                    currentNote?.id === note.id && "bg-muted/50 border-primary/50"
                   )}
                   onClick={() => selectNote(note)}
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
-                      <input
-                        type="text"
-                        value={note.name}
-                        onChange={(e) => updateNoteName(note.id, e.target.value)}
-                        onClick={(e) => e.stopPropagation()}
-                        className="font-medium text-sm bg-transparent border-none outline-none w-full truncate"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={note.name}
+                          onChange={(e) => updateNote(note.id, { name: e.target.value })}
+                          onClick={(e) => e.stopPropagation()}
+                          className="font-medium text-sm bg-transparent border-none outline-none w-full truncate"
+                        />
+                        {note.isLocal && (
+                          <CloudOff className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
                         {new Date(note.lastModified).toLocaleDateString()}
                       </p>
-                      <p className="text-xs text-gray-400 mt-1 line-clamp-2">
-                        {note.content.replace(/<[^>]*>/g, '').substring(0, 50)}...
-                      </p>
+                      {note.tags && note.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {note.tags.slice(0, 3).map((tag) => (
+                            <Badge key={tag} variant="secondary" className="text-xs px-1 py-0">
+                              {tag}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 p-0 text-red-500 hover:text-red-700"
-                      onClick={(e) => deleteNote(note.id, e)}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 p-0 text-destructive hover:text-destructive"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteNote(note.id);
+                      }}
                     >
                       <Trash2 className="h-3 w-3" />
                     </Button>
@@ -338,77 +321,234 @@ const Editor = () => {
                 </div>
               ))}
             </div>
+
+            {/* Create Folder (Premium) */}
+            {isAuthenticated && (
+              <div className="absolute bottom-4 left-4 right-4">
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="New folder name"
+                    value={newFolderName}
+                    onChange={(e) => setNewFolderName(e.target.value)}
+                    className="h-8 text-sm"
+                  />
+                  <Button size="sm" variant="outline" onClick={handleCreateFolder}>
+                    <FolderPlus className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
           </SheetContent>
         </Sheet>
 
         <div className="w-px h-4 bg-gray-300 dark:bg-gray-600" />
-        
+
+        {/* Formatting */}
         <Button
           variant="ghost"
           size="sm"
           onClick={() => handleFormat("bold")}
           className={cn(
-            "h-8 w-8 p-0 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700",
-            isDark ? "text-gray-300" : "text-gray-600"
+            "h-8 w-8 p-0 rounded-full",
+            isDark ? "text-gray-300 hover:bg-gray-700" : "text-gray-600 hover:bg-gray-100"
           )}
         >
           <Bold className="h-4 w-4" />
         </Button>
-        
+
         <Button
           variant="ghost"
           size="sm"
           onClick={() => handleFormat("italic")}
           className={cn(
-            "h-8 w-8 p-0 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700",
-            isDark ? "text-gray-300" : "text-gray-600"
+            "h-8 w-8 p-0 rounded-full",
+            isDark ? "text-gray-300 hover:bg-gray-700" : "text-gray-600 hover:bg-gray-100"
           )}
         >
           <Italic className="h-4 w-4" />
         </Button>
-        
+
         <Button
           variant="ghost"
           size="sm"
           onClick={() => handleFormat("underline")}
           className={cn(
-            "h-8 w-8 p-0 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700",
-            isDark ? "text-gray-300" : "text-gray-600"
+            "h-8 w-8 p-0 rounded-full",
+            isDark ? "text-gray-300 hover:bg-gray-700" : "text-gray-600 hover:bg-gray-100"
           )}
         >
           <Underline className="h-4 w-4" />
         </Button>
 
         <div className="w-px h-4 bg-gray-300 dark:bg-gray-600" />
-        
+
+        {/* Voice Dictation */}
         <Button
           variant="ghost"
           size="sm"
-          onClick={handleDownload}
+          onClick={handleVoiceDictation}
+          disabled={isTranscribing}
           className={cn(
-            "h-8 w-8 p-0 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700",
-            isDark ? "text-gray-300" : "text-gray-600"
+            "h-8 w-8 p-0 rounded-full",
+            isRecording && "bg-red-500/20 text-red-500",
+            isDark ? "text-gray-300 hover:bg-gray-700" : "text-gray-600 hover:bg-gray-100"
           )}
         >
-          <Download className="h-4 w-4" />
+          {isTranscribing ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : isRecording ? (
+            <MicOff className="h-4 w-4" />
+          ) : (
+            <Mic className="h-4 w-4" />
+          )}
         </Button>
 
+        {/* Tags */}
+        {currentNote && (
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  "h-8 w-8 p-0 rounded-full",
+                  isDark ? "text-gray-300 hover:bg-gray-700" : "text-gray-600 hover:bg-gray-100"
+                )}
+              >
+                <Tag className="h-4 w-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-64">
+              <div className="space-y-3">
+                <p className="text-sm font-medium">Tags</p>
+                <div className="flex flex-wrap gap-1">
+                  {currentNote.tags?.map((tag) => (
+                    <Badge
+                      key={tag}
+                      variant="secondary"
+                      className="cursor-pointer"
+                      onClick={() => removeTagFromNote(currentNote.id, tag)}
+                    >
+                      {tag} ×
+                    </Badge>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Add tag"
+                    value={newTag}
+                    onChange={(e) => setNewTag(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleAddTag()}
+                    className="h-8 text-sm"
+                  />
+                  <Button size="sm" onClick={handleAddTag}>
+                    Add
+                  </Button>
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
+        )}
+
         <div className="w-px h-4 bg-gray-300 dark:bg-gray-600" />
-        
+
+        {/* Export */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className={cn(
+                "h-8 w-8 p-0 rounded-full",
+                isDark ? "text-gray-300 hover:bg-gray-700" : "text-gray-600 hover:bg-gray-100"
+              )}
+            >
+              <FileDown className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuItem onClick={() => handleExport("txt")}>
+              <Download className="h-4 w-4 mr-2" />
+              Export as TXT
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => handleExport("md")}>
+              <Download className="h-4 w-4 mr-2" />
+              Export as Markdown
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => handleExport("html")}>
+              <Download className="h-4 w-4 mr-2" />
+              Export as HTML
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => handleExport("pdf")}>
+              <Download className="h-4 w-4 mr-2" />
+              Print / Save as PDF
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <div className="w-px h-4 bg-gray-300 dark:bg-gray-600" />
+
+        {/* Theme Toggle */}
         <Button
           variant="ghost"
           size="sm"
           onClick={toggleTheme}
           className={cn(
-            "h-8 w-8 p-0 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700",
-            isDark ? "text-gray-300" : "text-gray-600"
+            "h-8 w-8 p-0 rounded-full",
+            isDark ? "text-gray-300 hover:bg-gray-700" : "text-gray-600 hover:bg-gray-100"
           )}
         >
           {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         </Button>
+
+        <div className="w-px h-4 bg-gray-300 dark:bg-gray-600" />
+
+        {/* Auth */}
+        {isAuthenticated ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  "h-8 px-2 rounded-full gap-1",
+                  isDark ? "text-gray-300 hover:bg-gray-700" : "text-gray-600 hover:bg-gray-100"
+                )}
+              >
+                <Cloud className="h-4 w-4 text-green-500" />
+                <span className="text-xs max-w-[80px] truncate">{user?.email}</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem disabled>
+                <Cloud className="h-4 w-4 mr-2 text-green-500" />
+                Cloud Sync Active
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={signOut}>
+                <LogOut className="h-4 w-4 mr-2" />
+                Sign Out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setAuthModalOpen(true)}
+            className={cn(
+              "h-8 px-2 rounded-full gap-1",
+              isDark ? "text-gray-300 hover:bg-gray-700" : "text-gray-600 hover:bg-gray-100"
+            )}
+          >
+            <CloudOff className="h-4 w-4" />
+            <span className="text-xs">Sign in</span>
+          </Button>
+        )}
       </div>
 
-      {/* Main Content Area - blank.page style */}
+      {/* Main Content Area */}
       <div className="max-w-3xl mx-auto px-6 py-20">
         <div
           ref={editorRef}
@@ -416,24 +556,25 @@ const Editor = () => {
           className={cn(
             "outline-none min-h-[calc(100vh-8rem)] text-lg leading-relaxed transition-colors duration-300",
             isDark ? "text-gray-100" : "text-gray-900",
-            "focus:outline-none",
-            "[&_*]:outline-none",
-            "font-normal"
+            "focus:outline-none [&_*]:outline-none font-normal"
           )}
           onInput={handleContentChange}
           spellCheck="true"
           suppressContentEditableWarning
           style={{
-            direction: 'ltr',
-            textAlign: 'left',
-            whiteSpace: 'pre-wrap',
-            wordWrap: 'break-word',
-            lineHeight: '1.6',
-            fontSize: '18px',
-            fontFamily: 'system-ui, -apple-system, sans-serif'
+            direction: "ltr",
+            textAlign: "left",
+            whiteSpace: "pre-wrap",
+            wordWrap: "break-word",
+            lineHeight: "1.6",
+            fontSize: "18px",
+            fontFamily: "system-ui, -apple-system, sans-serif",
           }}
         />
       </div>
+
+      {/* Auth Modal */}
+      <AuthModal open={authModalOpen} onOpenChange={setAuthModalOpen} />
     </div>
   );
 };

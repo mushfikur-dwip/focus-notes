@@ -30,18 +30,16 @@ export function useAuth() {
 
   const sendOtp = async (email: string) => {
     try {
-      const { data, error } = await supabase.functions.invoke("send-otp", {
-        body: { email },
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          emailRedirectTo: `${window.location.origin}/`,
+        },
       });
 
       if (error) {
         toast.error(error.message || "Failed to send OTP");
         return { error };
-      }
-
-      if (data?.error) {
-        toast.error(data.error);
-        return { error: data.error };
       }
 
       toast.success("OTP কোড পাঠানো হয়েছে! Email চেক করুন।");
@@ -54,8 +52,10 @@ export function useAuth() {
 
   const verifyOtp = async (email: string, code: string) => {
     try {
-      const { data, error } = await supabase.functions.invoke("verify-otp", {
-        body: { email, code },
+      const { data, error } = await supabase.auth.verifyOtp({
+        email,
+        token: code,
+        type: "email",
       });
 
       if (error) {
@@ -63,24 +63,13 @@ export function useAuth() {
         return { error };
       }
 
-      if (data?.error) {
-        toast.error(data.error);
-        return { error: data.error };
-      }
-
-      if (data?.session) {
-        // Set the session manually
-        await supabase.auth.setSession({
-          access_token: data.session.access_token,
-          refresh_token: data.session.refresh_token,
-        });
-
+      if (data.session) {
+        setSession(data.session);
+        setUser(data.session.user);
         toast.success("সফলভাবে লগইন হয়েছে!");
-        return { error: null };
       }
 
-      toast.error("Authentication failed");
-      return { error: "Authentication failed" };
+      return { error: null };
     } catch (err: any) {
       toast.error(err.message || "Verification failed");
       return { error: err };

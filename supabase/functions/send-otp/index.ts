@@ -56,7 +56,7 @@ serve(async (req) => {
     }
 
     // Send OTP via email
-    const { error: emailError } = await resend.emails.send({
+    const emailResult = await resend.emails.send({
       from: "FocusNote <onboarding@resend.dev>",
       to: [email],
       subject: "Your FocusNote Verification Code",
@@ -89,8 +89,14 @@ serve(async (req) => {
       `,
     });
 
-    if (emailError) {
-      console.error("Error sending email:", emailError);
+    if (emailResult.error) {
+      console.error("Error sending email:", emailResult.error);
+      
+      // Check if it's a domain verification issue
+      if (emailResult.error.message?.includes("verify a domain")) {
+        throw new Error("Email service requires domain verification. Please contact support or use a verified domain.");
+      }
+      
       throw new Error("Failed to send verification email");
     }
 
